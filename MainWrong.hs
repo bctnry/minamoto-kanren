@@ -1,0 +1,182 @@
+module MainWrong where
+
+import Debug.Trace (trace, traceWith)
+
+-- NOTE: this is the wrong implementation of okmij's sokuza kanren.
+-- see comment below at lookupSubst.
+
+data Term = Var String | Value String | Functor String [Term] deriving (Eq, Show)
+type Subst = [(String, Term)]
+type Goal = Subst -> [Subst]
+
+falsify :: Goal
+falsify _ = []
+
+succeed :: Goal
+succeed x = [x]
+
+disj :: Goal -> Goal -> Goal
+disj x y = \s-> (x s) ++ (y s)
+
+conj :: Goal -> Goal -> Goal
+conj x y =
+  \s -> case map y (x s) of
+    [] -> []
+    t -> foldl1 (++) t
+
+emptySubst :: Subst
+emptySubst = []
+
+extendSubst :: (String, Term) -> Subst -> Subst
+extendSubst (k, v) s = (k, v):s
+
+
+-- so that one can create new objs with the same name without worrying
+-- about name clash.
+lookupSubst :: Term -> Subst -> Maybe Term
+lookupSubst t s =
+  case t of
+    Value _ -> Just t
+    Functor _ _ -> Just t
+    Var k ->
+      case s of
+        [] -> Nothing
+        (kk,vv):res -> if k == kk then Just vv else lookupSubst t res
+
+newvar :: Term -> Subst -> Term
+newvar s@(Var sn) sub =
+  let exn = sn ++ "'"
+  in
+    case lookupSubst (Var exn) sub of
+      Nothing -> Var exn
+      Just _ -> newvar (Var exn) sub
+newvar s _ = s
+
+unify :: Term -> Term -> Subst -> Maybe Subst
+unify t1 t2 s = if t1Res == t2Res then Just s else unify' t1Res t2Res s
+  where
+    t1Res = ofs t1 $ lookupSubst t1 s
+    t2Res = ofs t2 $ lookupSubst t2 s
+    ofs t Nothing = t
+    ofs _ (Just t) = t
+
+unify' :: Term -> Term -> Subst -> Maybe Subst
+unify' (Value v) (Value v2) s = if v == v2 then Just s else Nothing
+unify' (Var k) v s = Just $ extendSubst (k, v) s
+unify' v (Var k) s = Just $ extendSubst (k, v) s
+unify' (Functor f1 arglst1) (Functor f2 arglst2) s =
+  if f1 /= f2 then Nothing
+  else if length arglst1 /= length arglst2 then Nothing
+  else unify'' arglst1 arglst2 s
+
+unify'' :: [Term] -> [Term] -> Subst -> Maybe Subst
+unify'' [] [] s = Just s
+unify'' [] _ s = Nothing
+unify'' _ [] s = Nothing
+unify'' (a:as) (b:bs) s =
+  case unify a b s of
+    Nothing -> Nothing
+    Just newS -> unify'' as bs newS
+  
+vx = Var "X"
+vy = Var "Y"
+vz = Var "Z"
+vq = Var "Q"
+
+(===) :: Term -> Term -> Goal
+(===) t1 t2 =
+  \s ->
+    case unify t1 t2 s of
+      Nothing -> falsify s
+      Just ss -> succeed ss
+  
+run :: Goal -> [Subst]
+run g = g emptySubst
+
+choice :: Term -> [Term] -> Goal
+choice v [] = falsify
+choice v (s:ss) = disj (v === s) (choice v ss)
+
+commonEl :: [Term] -> [Term] -> Goal
+commonEl l1 l2 = conj (choice vx l1) (choice vx l2)
+
+conso a b l = (Functor "cons" [a, b]) === l
+
+-- we simulate list w/ first-order embedded functors.
+
+fCons :: Term -> Term -> Term
+fCons a b = Functor "cons" [a, b]
+
+fNil :: Term
+fNil = Functor "nil" []
+
+fList :: [Term] -> Term
+fList [] = Functor "nil" []
+fList (x:xs) = Functor "cons" [x, fList xs]
+
+-- the reason why eta-expansion is needed in sokuza kanren
+-- is because scheme is call-by-value. this is not needed
+-- in haskell because haskell is lazy.
+-- the same goes for conjN, which is defined as a macro w/
+-- eta-expansion in sokuza kanren but has the same definition
+-- as disjN here.
+appendo l1 l2 l3 s
+  | trace (
+      "appendo: \n"
+      ++ "l1: " ++ show l1 ++ "\n"
+      ++ "l2: " ++ show l2 ++ "\n"
+      ++ "l3: " ++ show l3 ++ "\n"
+      ++ "s: " ++ show s) False = undefined
+appendo l1 l2 l3 s =
+  disj
+    -- append([], X, X)
+    (conj (l1 === fNil) (l2 === l3))
+    -- append(L1, L2, L3)
+    (\s -> 
+       (let h = traceWith (\x -> "H: " ++ show x) $ newvar (Var "H") s
+            t = traceWith (\x -> "T: " ++ show x) $ newvar (Var "T") s
+            l3p = traceWith (\x -> "L3P: " ++ show x) $ newvar (Var "L3P") s
+        in (
+           conjN [
+               conso h t l1  -- [H|T] = L1
+               , conso h l3p l3  -- [H|L3P] = L3
+               , appendo t l2 l3p -- append(T, L2, L3P)
+               ]
+           ) s
+       )
+    )
+    s
+
+conjN :: [Goal] -> Goal
+conjN [] = succeed
+conjN (x:[]) = x
+conjN (x:xs) = conj x (conjN xs)
+
+disjN :: [Goal] -> Goal
+disjN [] = falsify
+disjN (x:[]) = x
+disjN (x:xs) = disj x (disjN xs)
+
+lookupN :: Term -> Subst -> Term
+lookupN t s =
+  case lookupSubst t s of
+    Nothing -> t
+    Just k ->
+      case k of
+        Var _ -> k
+        Value _ -> k
+        Functor f args -> Functor f (map (\t-> lookupN t s) args)
+
+runFull :: Goal -> [Term]
+runFull g = map (\s-> lookupN vq s) (g emptySubst)
+
+fListOf :: [String] -> Term
+fListOf s = fList $ map Value s
+
+main :: IO ()
+main = do
+  putStrLn $ show $ run $ appendo (fListOf ["1", "2"]) (fListOf ["3"]) vq
+
+                                     
+
+  
