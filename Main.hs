@@ -14,9 +14,9 @@ succeed :: Goal
 succeed x = [x]
 
 disj :: Goal -> Goal -> Goal
-disj x y = \s-> (x s) ++ (y s)
+disj x y = \s -> (x s) ++ (y s)
 
-  conj :: Goal -> Goal -> Goal
+conj :: Goal -> Goal -> Goal
 conj x y =
   \s -> case map y (x s) of
     [] -> []
@@ -75,6 +75,7 @@ vy = Var "Y"
 vz = Var "Z"
 vq = Var "Q"
 
+infixl ===
 (===) :: Term -> Term -> Goal
 (===) t1 t2 =
   \(s, k) ->
@@ -92,7 +93,7 @@ choice v (s:ss) = disj (v === s) (choice v ss)
 commonEl :: [Term] -> [Term] -> Goal
 commonEl l1 l2 = conj (choice vx l1) (choice vx l2)
 
-conso a b l = (Functor "cons" [a, b]) === l
+conso a b l = Functor "cons" [a, b] === l
 
 -- we simulate list w/ first-order embedded functors.
 
@@ -112,7 +113,8 @@ fList (x:xs) = Functor "cons" [x, fList xs]
 -- the same goes for conjN, which is defined as a macro w/
 -- eta-expansion in sokuza kanren but has the same definition
 -- as disjN here.
-appendo l1 l2 l3 s =
+appendo :: Term -> Term -> Term -> Goal
+appendo l1 l2 l3 =
   disj
     -- append([], X, X)
     (conj (l1 === fNil) (l2 === l3))
@@ -121,25 +123,24 @@ appendo l1 l2 l3 s =
        -- NOTE: we cannot do `let (h, s) = fresh s` here because haskell.
        let (h, s1) = fresh s
        in let (t, s2) = fresh s1
-          in let (l3p, s3) = fresh s2
-             in (
+       in let (l3p, s3) = fresh s2
+       in
          conjN [
              conso h t l1  -- [H|T] = L1
-             , conso h l3p l3  -- [H|L3P] = L3
-             , appendo t l2 l3p -- append(T, L2, L3P)
-             ]
-         ) s3
+           , conso h l3p l3  -- [H|L3P] = L3
+           , appendo t l2 l3p -- append(T, L2, L3P)
+         ]
+         s3
     )
-    s
 
 conjN :: [Goal] -> Goal
 conjN [] = succeed
-conjN (x:[]) = x
+conjN [x] = x
 conjN (x:xs) = conj x (conjN xs)
 
 disjN :: [Goal] -> Goal
 disjN [] = falsify
-disjN (x:[]) = x
+disjN [x] = x
 disjN (x:xs) = disj x (disjN xs)
 
 lookupN :: Term -> Subst -> Term
@@ -150,7 +151,7 @@ lookupN t s =
       case k of
         Var _ -> k
         Value _ -> k
-        Functor f args -> Functor f (map (\t-> lookupN t s) args)
+        Functor f args -> Functor f (map (\t -> lookupN t s) args)
 
 runFull :: Goal -> [Term]
 runFull g = map (\(s, _)-> lookupN vq s) (g emptyState)
