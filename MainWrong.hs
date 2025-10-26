@@ -3,7 +3,7 @@ module MainWrong where
 import Debug.Trace (trace, traceWith)
 
 -- NOTE: this is the wrong implementation of okmij's sokuza kanren.
--- see comment below at lookupSubst.
+-- see README.md.
 
 data Term = Var String | Value String | Functor String [Term] deriving (Eq, Show)
 type Subst = [(String, Term)]
@@ -30,9 +30,6 @@ emptySubst = []
 extendSubst :: (String, Term) -> Subst -> Subst
 extendSubst (k, v) s = (k, v):s
 
-
--- so that one can create new objs with the same name without worrying
--- about name clash.
 lookupSubst :: Term -> Subst -> Maybe Term
 lookupSubst t s =
   case t of

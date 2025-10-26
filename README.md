@@ -2,7 +2,7 @@
 
 Minimal relational programming utilities.
 
-Basically a re-implementation of Sokuza Kanren in Haskell and Go.
+Basically a re-implementation of [Sokuza Kanren](https://github.com/miniKanren/sokuza-kanren) in Haskell and Go.
 
 ## Difference between Minamoto Kanren and Sokuza Kanren
 
